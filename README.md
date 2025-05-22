@@ -53,4 +53,3 @@ export default tseslint.config({
   },
 })
 ```
->>>>>>> 0e5f811 (TODOアプリ完成)
