@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # todo-app
 ## React + TypeScript + Vite
 
