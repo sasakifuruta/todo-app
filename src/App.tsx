@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { FaPlus, FaTrash, FaEdit, FaSave } from 'react-icons/fa';
 import RotatingText from './components/RotatingText';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
@@ -14,20 +14,19 @@ type Todo = {
 
 function App() {
   const [input, setInput] = useState('');
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingIndex, setEditingIndex] = useState<string | null>(null);
   const [editText, setEditText] = useState('')
+  const [searchWord, setSearchWord] = useState('');
+  const [visibleCount, setVisibleCount] = useState(10);
+  const ITEMS_PER_LOAD = 3;
+
 
   const [todos, setTodos] = useState<Todo[]>(() => {
     const saved = localStorage.getItem('todos');
-    console.log('localStorageの中身:', saved);
-    
     if(saved){
       try{
-        console.log("パース後のデータ:", JSON.parse(saved))
         if(Array.isArray(JSON.parse(saved))){
           return JSON.parse(saved);
-        }else{
-          console.warn("配列ではないよ");
         }
       }catch(error){
         console.error("パースに失敗:", error);
@@ -56,33 +55,36 @@ function App() {
   };
 
   // 削除
-  const deleteTodo = (index: number) => {
-    setTodos(todos.filter((_, i)=>i !== index ));
+  const deleteTodo = (id: string) => {
+    setTodos(todos.filter(todo=> todo.id != id));
   };
 
-  const toggleComplete = (index: number) => {
-    const updated = [...todos];
-    updated[index].completed = !updated[index].completed;
+  const toggleComplete = (id: string) => {
+    const updated = todos.map(todo => 
+      todo.id === id ? {...todo, completed:!todo.completed } : todo
+    );
     setTodos(updated);
   };
 
   // 編集
-  const startEdit = (index: number) => {
-    setEditingIndex(index);
-    setEditText(todos[index].text);
+  const startEdit = (id: string) => {
+    setEditingIndex(id);
+    const target = todos.find(todo=> todo.id === id);
+    setEditText(target?.text ?? '');
   }
 
   // 編集保存
-  const saveEdit = (index: number) => {
-    const newTodos = [...todos];
-    newTodos[index].text = editText;
-    setTodos(newTodos);
+  const saveEdit = (id: string) => {
+    const updated = todos.map(todo => 
+      todo.id === id ? {...todo, text:editText} : todo
+    );
+    setTodos(updated);
     setEditingIndex(null);
     setEditText('');
   };
 
 
-  // 並べ替え
+  // ドラッグ＆ドロップ並べ替え
   const handleSort = (result: DropResult) => {
     const { source, destination} = result;
     // 移動先なしの場合は何もしない
@@ -94,79 +96,131 @@ function App() {
     setTodos(newTodos);
   } 
 
+  // 検索と並べ替え
+  const filteredAndSortedTodos = useMemo(()=>{
+    // 検索フィルター
+    const filtered = todos.filter(todo => 
+      todo.text.toLowerCase().includes(searchWord.toLowerCase())
+    );
+
+    // 並び替え（未完了タスクを上に)
+    return [...filtered].sort((a, b)=>{
+      return Number(a.completed) - Number(b.completed);
+    });
+  }, [todos, searchWord]);
+
+  // 無限スクロール(画面下部までスクロールしたら読み込み)
+  const displayTodos = useMemo(()=> {
+    return filteredAndSortedTodos.slice(0, visibleCount);
+  }, [filteredAndSortedTodos, visibleCount]);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const nearBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 100;
+      if (nearBottom) {
+        setVisibleCount((prev) => {
+          if (prev < filteredAndSortedTodos.length) {
+            return prev + ITEMS_PER_LOAD;
+          }
+          return prev;
+        });
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [filteredAndSortedTodos.length]);
+
 
   return (
     <>
-      <h1 style={{ display:"flex", alignItems:"center"}}>
-        <RotatingText texts={['BE', 'DO', 'HAVE']} interval={1500} />
-        <span style={{ color:"white" }}>WHAT YOU WANT</span>
-      </h1>
-      <div style={{ display:'flex' }}>
-        <input
-          value={input}
-          onChange={(e)=> setInput(e.target.value)}
-          placeholder='What you want'
-          className='inputTodo'
+    <header>
+      <div className="header">
+        <h1 style={{ display:"flex", alignItems:"center"}}>
+          <RotatingText texts={['BE', 'DO', 'HAVE']} interval={1500} />
+          <span style={{ color:"white" }}>WHAT YOU WANT</span>
+        </h1>
+        <div style={{ display: 'flex', marginBottom:'15px' }}>
+          <input
+            value={searchWord}
+            onChange={(e)=>setSearchWord(e.target.value)}
+            placeholder='🔍 Search lists'
+            className='inputTodo'
           />
-        <button onClick={ addTodo }>
-          <FaPlus />
-        </button>
-      </div>
-      <DragDropContext onDragEnd={handleSort}>
-        <Droppable droppableId='todoList'>
-          {(provided) => (
-            <ul {...provided.droppableProps} ref={provided.innerRef}>
-            {todos.map((todo, index)=>(
-              <Draggable key={todo.id} draggableId={todo.id} index={index}>
-                {(provided)=>(
-                  <li key={index} className='added_todo'
-                    ref={provided.innerRef}
-                    {...provided.draggableProps}
-                    {...provided.dragHandleProps}
-                  >
-                  {editingIndex === index ? (
-                    <>
-                      <input
-                        className='edit_input'
-                        value={editText}
-                        onChange={(e)=> setEditText(e.target.value)}
-                      />
-                      <button onClick={() => saveEdit(index)}>
-                        <FaSave />
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <div>
+        </div>
+        <div style={{ display:'flex' }}>
+          <input
+            value={input}
+            onChange={(e)=> setInput(e.target.value)}
+            placeholder='What you want'
+            className='inputTodo'
+            />
+          <button onClick={ addTodo }>
+            <FaPlus />
+          </button>
+        </div>
+      </div> 
+    </header>{/* end of header */}
+
+      <main>
+        <DragDropContext onDragEnd={handleSort}>
+          <Droppable droppableId='todoList'>
+            {(provided) => (
+              <ul {...provided.droppableProps} ref={provided.innerRef}>
+              {displayTodos.map((todo, index)=>(
+                <Draggable key={todo.id} draggableId={todo.id} index={index}>
+                  {(provided)=>(
+                    <li 
+                      className='added_todo'
+                      ref={provided.innerRef}
+                      {...provided.draggableProps}
+                      {...provided.dragHandleProps}
+                    >
+                    {editingIndex === todo.id ? (
+                      <>
                         <input
-                          type="checkbox"
-                          checked= {todo.completed}
-                          onChange = {()=> toggleComplete(index)}
+                          className='edit_input'
+                          value={editText}
+                          onChange={(e)=> setEditText(e.target.value)}
                         />
-                        <span  className="todo_text" style={{ textDecoration:todo.completed ? 'line-through' : 'none' }}>
-                          {todo.text}
-                        </span>
-                      </div>
-                      <div>
-                        <button onClick={()=>startEdit(index)} title='Edit'>
-                          <FaEdit />
+                        <button onClick={() => saveEdit(todo.id)}>
+                          <FaSave />
                         </button>
-                        <button onClick={()=>deleteTodo(index)} title='Delete'>
-                          <FaTrash />
-                        </button>
-                      </div>
-                    </>
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <input
+                            type="checkbox"
+                            checked= {todo.completed}
+                            onChange = {()=> toggleComplete(todo.id)}
+                          />
+                          <span  className="todo_text" style={{ textDecoration:todo.completed ? 'line-through' : 'none' }}>
+                            {todo.text}
+                          </span>
+                        </div>
+                        <div>
+                          <button onClick={()=>startEdit(todo.id)} title='Edit'>
+                            <FaEdit />
+                          </button>
+                          <button onClick={()=>deleteTodo(todo.id)} title='Delete'>
+                            <FaTrash />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </li>
                   )}
-                </li>
-                )}
-                </Draggable>
-            ))}
-          </ul>
-          )}
-        </Droppable>
-      </DragDropContext>
+                  </Draggable>
+              ))}
+              {provided.placeholder}
+            </ul>
+            )}
+          </Droppable>
+        </DragDropContext>
+      </main>
     </>
   );
 }
 
-export default App
+export default App;
