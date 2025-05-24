@@ -20,6 +20,14 @@ function App() {
   const [visibleCount, setVisibleCount] = useState(10);
   const ITEMS_PER_LOAD = 3;
 
+  const [message, setMessage] = useState("");
+  useEffect(() => {
+    fetch("https://aklzs4npvam2qxnmpjv6pi7fj40ubcxb.lambda-url.ap-northeast-1.on.aws/") // ← Lambda関数URL
+      .then((res) => res.json())
+      .then((data) => setMessage(data.message))
+      .catch((err) => console.error("エラー:", err));
+  }, []);
+
 
   const [todos, setTodos] = useState<Todo[]>(() => {
     const saved = localStorage.getItem('todos');
@@ -136,6 +144,10 @@ function App() {
     <>
     <header>
       <div className="header">
+        <div>
+          <h1>Lambdaからのメッセージ：</h1>
+          <p>{message}</p>
+        </div>
         <h1 style={{ display:"flex", alignItems:"center"}}>
           <RotatingText texts={['BE', 'DO', 'HAVE']} interval={1500} />
           <span style={{ color:"white" }}>WHAT YOU WANT</span>
